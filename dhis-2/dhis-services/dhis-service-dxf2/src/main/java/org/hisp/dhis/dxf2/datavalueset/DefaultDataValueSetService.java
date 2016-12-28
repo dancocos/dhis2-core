@@ -101,6 +101,7 @@ import java.io.OutputStream;
 import java.io.Writer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
@@ -772,6 +773,8 @@ public class DefaultDataValueSetService
         int deleteCount = 0;
         int totalCount = 0;
 
+        final List<Integer> approvalCacheCounts = new ArrayList<>( Collections.nCopies(3, 0) );
+
         // ---------------------------------------------------------------------
         // Data values
         // ---------------------------------------------------------------------
@@ -1019,12 +1022,21 @@ public class DefaultDataValueSetService
                 {
                     final String workflowPeriodAoc = workflow.getUid() + period.getUid() + attrOptionCombo.getUid();
 
+                    approvalCacheCounts.set( 0, approvalCacheCounts.get(0) + 1);
+
                     if ( approvalMap.get( orgUnit.getUid() + workflowPeriodAoc, () ->
                     {
+                        approvalCacheCounts.set( 1, approvalCacheCounts.get(1) + 1);
+
                         DataApproval lowestApproval = DataApproval.getLowestApproval( new DataApproval( null, workflow, period, orgUnit, aoc ) );
 
                         return lowestApprovalLevelMap.get( lowestApproval.getDataApprovalLevel().getUid() + lowestApproval.getOrganisationUnit().getUid() + workflowPeriodAoc,
-                            () -> approvalService.getDataApproval( lowestApproval ) != null );
+                            () ->
+                            {
+                                approvalCacheCounts.set( 2, approvalCacheCounts.get(2) + 1);
+
+                                return approvalService.getDataApproval( lowestApproval ) != null;
+                            } );
                     } ) )
                     {
                         summary.getConflicts().add( new ImportConflict( orgUnit.getUid(),
@@ -1161,6 +1173,8 @@ public class DefaultDataValueSetService
         summary.setImportCount( new ImportCount( importCount, updateCount, ignores, deleteCount ) );
         summary.setStatus( ImportStatus.SUCCESS );
         summary.setDescription( "Import process completed successfully" );
+
+        log.info( "Import approval cache counts: " + approvalCacheCounts.get(0) + " " + approvalCacheCounts.get(1) + " " + approvalCacheCounts.get(2) );
 
         notifier.notify( id, INFO, "Import done", true ).addTaskSummary( id, summary );
         clock.logTime( "Data value import done, total: " + totalCount + ", import: " + importCount + ", update: " + updateCount + ", delete: " + deleteCount );
